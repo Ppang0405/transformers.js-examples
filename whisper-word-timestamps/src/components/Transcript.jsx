@@ -43,16 +43,71 @@ const Transcript = ({ transcript, currentTime, setCurrentTime, ...props }) => {
     URL.revokeObjectURL(url);
   };
 
+  const groupWordsIntoPhrases = (chunks) => {
+    const phrases = [];
+    let currentPhrase = [];
+    let phraseStart = null;
+    
+    chunks.forEach((chunk, index) => {
+      const [start, end] = chunk.timestamp;
+      const text = chunk.text.trim();
+      
+      // Start new phrase if this is the first chunk
+      if (currentPhrase.length === 0) {
+        phraseStart = start;
+        currentPhrase.push({ text, start, end });
+      } else {
+        // Check if we should start a new phrase based on:
+        // 1. Punctuation (., ?, !)
+        // 2. Long gaps between words (> 1 second)
+        // 3. Phrase length limit (~10-12 words)
+        const lastChunk = currentPhrase[currentPhrase.length - 1];
+        const timeGap = start - lastChunk.end;
+        const hasPunctuation = /[.!?]$/.test(lastChunk.text);
+        const isTooLong = currentPhrase.length >= 12;
+        
+        if (hasPunctuation || timeGap > 1.0 || isTooLong) {
+          // Finalize current phrase
+          const phraseEnd = lastChunk.end;
+          phrases.push({
+            text: currentPhrase.map(c => c.text).join(' '),
+            start: phraseStart,
+            end: phraseEnd
+          });
+          
+          // Start new phrase
+          currentPhrase = [{ text, start, end }];
+          phraseStart = start;
+        } else {
+          // Add to current phrase
+          currentPhrase.push({ text, start, end });
+        }
+      }
+    });
+    
+    // Add the last phrase if it exists
+    if (currentPhrase.length > 0) {
+      const lastChunk = currentPhrase[currentPhrase.length - 1];
+      phrases.push({
+        text: currentPhrase.map(c => c.text).join(' '),
+        start: phraseStart,
+        end: lastChunk.end
+      });
+    }
+    
+    return phrases;
+  };
+
   const convertToVTT = () => {
     let vttContent = "WEBVTT\n\n";
+    const phrases = groupWordsIntoPhrases(transcript.chunks);
     
-    transcript.chunks.forEach((chunk, index) => {
-      const [start, end] = chunk.timestamp;
-      const startTime = formatTimeForVTT(start);
-      const endTime = formatTimeForVTT(end);
+    phrases.forEach((phrase, index) => {
+      const startTime = formatTimeForVTT(phrase.start);
+      const endTime = formatTimeForVTT(phrase.end);
       vttContent += `${index + 1}\n`;
       vttContent += `${startTime} --> ${endTime}\n`;
-      vttContent += `${chunk.text.trim()}\n\n`;
+      vttContent += `${phrase.text}\n\n`;
     });
     
     return vttContent;
@@ -60,14 +115,14 @@ const Transcript = ({ transcript, currentTime, setCurrentTime, ...props }) => {
 
   const convertToSRT = () => {
     let srtContent = "";
+    const phrases = groupWordsIntoPhrases(transcript.chunks);
     
-    transcript.chunks.forEach((chunk, index) => {
-      const [start, end] = chunk.timestamp;
-      const startTime = formatTimeForSRT(start);
-      const endTime = formatTimeForSRT(end);
+    phrases.forEach((phrase, index) => {
+      const startTime = formatTimeForSRT(phrase.start);
+      const endTime = formatTimeForSRT(phrase.end);
       srtContent += `${index + 1}\n`;
       srtContent += `${startTime} --> ${endTime}\n`;
-      srtContent += `${chunk.text.trim()}\n\n`;
+      srtContent += `${phrase.text}\n\n`;
     });
     
     return srtContent;
